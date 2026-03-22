@@ -1,7 +1,9 @@
 import axios from 'axios';
 
+export const API_BASE_URL = 'http://localhost:8080';
+
 const api = axios.create({
-	baseURL: 'http://localhost:8080',
+	baseURL: API_BASE_URL,
 	headers: {
 		'Content-Type': 'application/json',
 	},
@@ -23,4 +25,5 @@ export const testSuitesApi = {
 export const executionsApi = {
 	start: (payload) => api.post('/api/executions/start', payload),
 	getAll: () => api.get('/api/executions/all'),
+	getReport: (executionId) => api.get(`/api/executions/report/${executionId}`),
 };

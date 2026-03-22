@@ -1,5 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import ExecutionReportModal from '../components/ExecutionReportModal';
+import Tooltip from '../components/Tooltip';
 import { executionsApi, testSuitesApi } from '../services/api';
+import { getImageUrl } from '../utils/screenshotUrl';
 
 export default function Execution() {
 	const [suites, setSuites] = useState([]);
@@ -8,6 +11,27 @@ export default function Execution() {
 	const [running, setRunning] = useState(false);
 	const [error, setError] = useState(null);
 	const [lastResult, setLastResult] = useState(null);
+	const [reportExecutionId, setReportExecutionId] = useState(null);
+
+	/** First screenshot filesystem path per execution id (from report API), null = none / not loaded */
+	const [screenshotPathByExecutionId, setScreenshotPathByExecutionId] = useState({});
+
+	const [selectedImage, setSelectedImage] = useState(null);
+	const [isModalOpen, setIsModalOpen] = useState(false);
+
+	const closeModal = useCallback(() => {
+		setIsModalOpen(false);
+		setSelectedImage(null);
+	}, []);
+
+	const openScreenshotPreview = useCallback((rawPath) => {
+		const url = getImageUrl(rawPath);
+		if (!url) {
+			return;
+		}
+		setSelectedImage(url);
+		setIsModalOpen(true);
+	}, []);
 
 	const loadSuites = async () => {
 		try {
@@ -31,6 +55,45 @@ export default function Execution() {
 		loadSuites();
 		loadExecutions();
 	}, []);
+
+	const canViewReport = (ex) => ex.status === 'COMPLETED' && (ex.totalTests ?? 0) > 0;
+
+	/** Load first screenshot path per execution so the table can show View vs — */
+	useEffect(() => {
+		if (!executions.length) {
+			setScreenshotPathByExecutionId({});
+			return;
+		}
+		let cancelled = false;
+		(async () => {
+			const eligible = executions.filter(
+				(ex) => ex.status === 'COMPLETED' && (ex.totalTests ?? 0) > 0,
+			);
+			const entries = await Promise.all(
+				eligible.map(async (ex) => {
+					try {
+						const { data } = await executionsApi.getReport(ex.id);
+						const rows = Array.isArray(data?.rows) ? data.rows : [];
+						const first = rows.find((r) => r?.screenshotPath);
+						return [ex.id, first?.screenshotPath ?? null];
+					} catch {
+						return [ex.id, null];
+					}
+				}),
+			);
+			if (cancelled) {
+				return;
+			}
+			const next = {};
+			for (const [id, path] of entries) {
+				next[id] = path;
+			}
+			setScreenshotPathByExecutionId(next);
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, [executions]);
 
 	const runSuite = async () => {
 		const id = Number(suiteId);
@@ -141,6 +204,17 @@ export default function Execution() {
 							</dd>
 						</div>
 					</dl>
+					{canViewReport(lastResult) && (
+						<div className="mt-4">
+							<button
+								type="button"
+								onClick={() => setReportExecutionId(lastResult.id)}
+								className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500"
+							>
+								View full report
+							</button>
+						</div>
+					)}
 				</div>
 			)}
 
@@ -159,35 +233,118 @@ export default function Execution() {
 								<th className="px-6 py-3">Passed</th>
 								<th className="px-6 py-3">Failed</th>
 								<th className="px-6 py-3">Time</th>
+								<th className="px-6 py-3">Screenshot</th>
 							</tr>
 						</thead>
 						<tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
 							{executions.length === 0 ? (
 								<tr>
-									<td colSpan={6} className="px-6 py-8 text-center text-zinc-500">
+									<td colSpan={7} className="px-6 py-8 text-center text-zinc-500">
 										No executions recorded yet.
 									</td>
 								</tr>
 							) : (
 								[...executions]
 									.sort((a, b) => (b.id || 0) - (a.id || 0))
-									.map((ex) => (
-										<tr key={ex.id} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40">
-											<td className="px-6 py-3 font-mono text-zinc-500">{ex.id}</td>
-											<td className="px-6 py-3 font-medium">{ex.status}</td>
-											<td className="px-6 py-3">{ex.totalTests}</td>
-											<td className="px-6 py-3 text-emerald-600 dark:text-emerald-400">{ex.passedTests}</td>
-											<td className="px-6 py-3 text-rose-600 dark:text-rose-400">{ex.failedTests}</td>
-											<td className="px-6 py-3 text-zinc-600 dark:text-zinc-300">
-												{ex.executionTime ? new Date(ex.executionTime).toLocaleString() : '—'}
-											</td>
-										</tr>
-									))
+									.map((ex) => {
+										const rawPath = screenshotPathByExecutionId[ex.id];
+										const hasScreenshot = Boolean(rawPath);
+										const hasFailures = (ex.failedTests ?? 0) > 0;
+										return (
+											<tr
+												key={ex.id}
+												className={`transition-colors hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 ${
+													hasFailures
+														? 'bg-rose-50/60 dark:bg-rose-950/25'
+														: ''
+												}`}
+											>
+												<td className="px-6 py-3 font-mono text-zinc-500">{ex.id}</td>
+												<td className="px-6 py-3 font-medium">{ex.status}</td>
+												<td className="px-6 py-3">{ex.totalTests}</td>
+												<td className="px-6 py-3 text-emerald-600 dark:text-emerald-400">
+													{ex.passedTests}
+												</td>
+												<td
+													className={`px-6 py-3 font-semibold ${
+														hasFailures
+															? 'text-rose-700 dark:text-rose-400'
+															: 'text-rose-600 dark:text-rose-400'
+													}`}
+												>
+													{ex.failedTests}
+												</td>
+												<td className="px-6 py-3 text-zinc-600 dark:text-zinc-300">
+													{ex.executionTime ? new Date(ex.executionTime).toLocaleString() : '—'}
+												</td>
+												<td className="px-6 py-3">
+													{hasScreenshot ? (
+														<Tooltip text="View failure screenshot">
+															<button
+																type="button"
+																onClick={() => openScreenshotPreview(rawPath)}
+																className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-indigo-500 hover:shadow-md hover:shadow-indigo-500/30 active:scale-[0.97]"
+															>
+																View
+															</button>
+														</Tooltip>
+													) : (
+														<span className="text-zinc-400">—</span>
+													)}
+												</td>
+											</tr>
+										);
+									})
 							)}
 						</tbody>
 					</table>
 				</div>
 			</div>
+
+			<ExecutionReportModal
+				isOpen={reportExecutionId != null}
+				executionId={reportExecutionId}
+				onClose={() => setReportExecutionId(null)}
+			/>
+
+			{/* Screenshot preview modal — mount when open so fade-in animation runs reliably */}
+			{isModalOpen && selectedImage && (
+				<div className="fixed inset-0 z-[70] flex items-center justify-center p-4" aria-hidden={false}>
+					<button
+						type="button"
+						className="absolute inset-0 animate-fade-in bg-black/75 backdrop-blur-[2px]"
+						onClick={closeModal}
+						aria-label="Close modal"
+					/>
+					<div
+						className="relative z-10 flex max-h-[90vh] w-full max-w-[80vw] animate-fade-in-up flex-col rounded-2xl bg-white p-3 shadow-2xl ring-1 ring-zinc-200/90 dark:bg-zinc-900 dark:ring-zinc-700"
+						role="dialog"
+						aria-modal="true"
+						aria-label="Screenshot preview"
+					>
+						<div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-2 pb-2 dark:border-zinc-800">
+							<p className="truncate text-sm font-medium text-zinc-800 dark:text-zinc-100">Screenshot</p>
+							<button
+								type="button"
+								onClick={closeModal}
+								className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-white"
+								aria-label="Close"
+							>
+								<span className="text-2xl leading-none">&times;</span>
+							</button>
+						</div>
+						<div className="overflow-auto p-2">
+							<div className="group relative mx-auto overflow-hidden rounded-lg">
+								<img
+									src={selectedImage}
+									alt="Screenshot preview"
+									className="mx-auto max-h-[min(80vh,880px)] w-auto max-w-full rounded-lg object-contain shadow-lg transition-transform duration-500 ease-out will-change-transform group-hover:scale-[1.03]"
+								/>
+							</div>
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }
