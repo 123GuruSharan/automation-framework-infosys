@@ -8,18 +8,23 @@ export function getImageUrl(path) {
 	if (!path) {
 		return null;
 	}
-	const trimmed = String(path).trim();
+	let trimmed = String(path).trim();
 	if (!trimmed) {
 		return null;
 	}
 	if (/^https?:\/\//i.test(trimmed)) {
-		return trimmed;
+		try {
+			const parsed = new URL(trimmed);
+			trimmed = decodeURIComponent(parsed.pathname || '');
+		} catch {
+			// Fall back to original string parsing below.
+		}
 	}
 	const fileName = trimmed.split(/[/\\]/).filter(Boolean).pop();
 	if (!fileName) {
 		return null;
 	}
-	return `${API_BASE_URL}/screenshots/${encodeURIComponent(fileName)}`;
+	return `${API_BASE_URL}/api/screenshots?name=${encodeURIComponent(fileName)}`;
 }
 
 /** @deprecated use getImageUrl */

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import ExecutionReportModal from '../components/ExecutionReportModal';
+import ExecutionLogsModal from '../components/ExecutionLogsModal';
 import Tooltip from '../components/Tooltip';
-import { executionsApi, testSuitesApi } from '../services/api';
+import { executionsApi, reportsApi, resultsApi, testSuitesApi } from '../services/api';
 import { getImageUrl } from '../utils/screenshotUrl';
 
 export default function Execution() {
@@ -18,6 +19,10 @@ export default function Execution() {
 
 	const [selectedImage, setSelectedImage] = useState(null);
 	const [isModalOpen, setIsModalOpen] = useState(false);
+	const [logsExecutionId, setLogsExecutionId] = useState(null);
+	const [suiteResults, setSuiteResults] = useState(null);
+	const [suiteResultsLoading, setSuiteResultsLoading] = useState(false);
+	const [suiteResultsError, setSuiteResultsError] = useState(null);
 
 	const closeModal = useCallback(() => {
 		setIsModalOpen(false);
@@ -56,6 +61,11 @@ export default function Execution() {
 		loadExecutions();
 	}, []);
 
+	useEffect(() => {
+		setSuiteResults(null);
+		setSuiteResultsError(null);
+	}, [suiteId]);
+
 	const canViewReport = (ex) => ex.status === 'COMPLETED' && (ex.totalTests ?? 0) > 0;
 
 	/** Load first screenshot path per execution so the table can show View vs — */
@@ -74,8 +84,9 @@ export default function Execution() {
 					try {
 						const { data } = await executionsApi.getReport(ex.id);
 						const rows = Array.isArray(data?.rows) ? data.rows : [];
-						const first = rows.find((r) => r?.screenshotPath);
-						return [ex.id, first?.screenshotPath ?? null];
+						const allPaths = rows.map((r) => r?.screenshotPath).filter(Boolean);
+						const preferred = allPaths.length ? allPaths[allPaths.length - 1] : null;
+						return [ex.id, preferred];
 					} catch {
 						return [ex.id, null];
 					}
@@ -94,6 +105,30 @@ export default function Execution() {
 			cancelled = true;
 		};
 	}, [executions]);
+
+	const loadSuiteResults = async () => {
+		const id = Number(suiteId);
+		if (!id) {
+			setSuiteResultsError('Select a test suite first');
+			return;
+		}
+		setSuiteResultsLoading(true);
+		setSuiteResultsError(null);
+		try {
+			const { data } = await resultsApi.getBySuite(id, { limit: 15 });
+			setSuiteResults(data);
+		} catch (e) {
+			setSuiteResults(null);
+			setSuiteResultsError(
+				e?.response?.data?.message ||
+					(typeof e?.response?.data === 'string' ? e.response.data : null) ||
+					e?.message ||
+					'Failed to load suite results',
+			);
+		} finally {
+			setSuiteResultsLoading(false);
+		}
+	};
 
 	const runSuite = async () => {
 		const id = Number(suiteId);
@@ -118,6 +153,10 @@ export default function Execution() {
 		} finally {
 			setRunning(false);
 		}
+	};
+
+	const openReportDownload = (executionId, format) => {
+		window.open(reportsApi.downloadUrl(executionId, format), '_blank', 'noopener,noreferrer');
 	};
 
 	return (
@@ -153,14 +192,59 @@ export default function Execution() {
 						))}
 					</select>
 				</label>
-				<button
-					type="button"
-					onClick={runSuite}
-					disabled={running}
-					className="mt-6 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:from-indigo-500 hover:to-violet-500 disabled:opacity-60"
-				>
-					{running ? 'Running suite…' : 'Run test suite'}
-				</button>
+				<div className="mt-6 flex flex-wrap items-center gap-3">
+					<button
+						type="button"
+						onClick={runSuite}
+						disabled={running}
+						className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:from-indigo-500 hover:to-violet-500 disabled:opacity-60"
+					>
+						{running ? 'Running suite…' : 'Run test suite'}
+					</button>
+					<button
+						type="button"
+						onClick={loadSuiteResults}
+						disabled={!suiteId || suiteResultsLoading}
+						className="rounded-xl border border-violet-300 bg-violet-50 px-5 py-3 text-sm font-semibold text-violet-800 transition hover:bg-violet-100 disabled:opacity-50 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20"
+					>
+						{suiteResultsLoading ? 'Loading…' : 'Suite history & pass rate'}
+					</button>
+				</div>
+				<p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
+					<code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">GET /api/results/&#123;suiteId&#125;</code>
+					— same integration as the Test suites page.
+				</p>
+				{suiteResultsError && (
+					<div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
+						{suiteResultsError}
+					</div>
+				)}
+				{suiteResults && (
+					<div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
+						<p className="text-sm font-semibold text-zinc-900 dark:text-white">
+							{suiteResults.suiteName}{' '}
+							<span className="font-normal text-zinc-500 dark:text-zinc-400">
+								({suiteResults.totalExecutions} run(s), overall pass {suiteResults.overallPassRate}%)
+							</span>
+						</p>
+						{suiteResults.lastExecutionAt && (
+							<p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+								Last run: {new Date(suiteResults.lastExecutionAt).toLocaleString()}
+							</p>
+						)}
+						<ul className="mt-3 max-h-48 space-y-1 overflow-y-auto text-xs text-zinc-700 dark:text-zinc-300">
+							{(suiteResults.recentExecutions || []).map((r) => (
+								<li key={r.id} className="flex justify-between gap-2 border-b border-zinc-200/80 pb-1 dark:border-zinc-600/50">
+									<span className="font-mono text-zinc-500">#{r.id}</span>
+									<span>{r.status}</span>
+									<span>
+										{r.passedTests}/{r.totalTests} passed
+									</span>
+								</li>
+							))}
+						</ul>
+					</div>
+				)}
 			</div>
 
 			{lastResult && (
@@ -205,13 +289,41 @@ export default function Execution() {
 						</div>
 					</dl>
 					{canViewReport(lastResult) && (
-						<div className="mt-4">
+						<div className="mt-4 flex flex-wrap gap-2">
 							<button
 								type="button"
 								onClick={() => setReportExecutionId(lastResult.id)}
 								className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500"
 							>
 								View full report
+							</button>
+							<button
+								type="button"
+								onClick={() => setLogsExecutionId(lastResult.id)}
+								className="rounded-lg bg-zinc-800 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-zinc-700 dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-zinc-300"
+							>
+								View logs
+							</button>
+							<button
+								type="button"
+								onClick={() => openReportDownload(lastResult.id, 'csv')}
+								className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+							>
+								CSV
+							</button>
+							<button
+								type="button"
+								onClick={() => openReportDownload(lastResult.id, 'html')}
+								className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+							>
+								HTML
+							</button>
+							<button
+								type="button"
+								onClick={() => openReportDownload(lastResult.id, 'junit')}
+								className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+							>
+								JUnit
 							</button>
 						</div>
 					)}
@@ -233,13 +345,15 @@ export default function Execution() {
 								<th className="px-6 py-3">Passed</th>
 								<th className="px-6 py-3">Failed</th>
 								<th className="px-6 py-3">Time</th>
+								<th className="px-6 py-3">Logs</th>
+								<th className="px-6 py-3">Export</th>
 								<th className="px-6 py-3">Screenshot</th>
 							</tr>
 						</thead>
 						<tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
 							{executions.length === 0 ? (
 								<tr>
-									<td colSpan={7} className="px-6 py-8 text-center text-zinc-500">
+									<td colSpan={9} className="px-6 py-8 text-center text-zinc-500">
 										No executions recorded yet.
 									</td>
 								</tr>
@@ -278,6 +392,40 @@ export default function Execution() {
 													{ex.executionTime ? new Date(ex.executionTime).toLocaleString() : '—'}
 												</td>
 												<td className="px-6 py-3">
+													<button
+														type="button"
+														onClick={() => setLogsExecutionId(ex.id)}
+														className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-zinc-700 dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-zinc-300"
+													>
+														View logs
+													</button>
+												</td>
+												<td className="px-6 py-3">
+													<div className="flex flex-wrap gap-2">
+														<button
+															type="button"
+															onClick={() => openReportDownload(ex.id, 'csv')}
+															className="rounded-lg border border-zinc-300 px-2.5 py-1 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+														>
+															CSV
+														</button>
+														<button
+															type="button"
+															onClick={() => openReportDownload(ex.id, 'html')}
+															className="rounded-lg border border-zinc-300 px-2.5 py-1 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+														>
+															HTML
+														</button>
+														<button
+															type="button"
+															onClick={() => openReportDownload(ex.id, 'junit')}
+															className="rounded-lg border border-zinc-300 px-2.5 py-1 text-xs font-semibold text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+														>
+															JUnit
+														</button>
+													</div>
+												</td>
+												<td className="px-6 py-3">
 													{hasScreenshot ? (
 														<Tooltip text="View failure screenshot">
 															<button
@@ -289,7 +437,9 @@ export default function Execution() {
 															</button>
 														</Tooltip>
 													) : (
-														<span className="text-zinc-400">—</span>
+														<span className="text-xs text-zinc-400">
+															{hasFailures ? 'No screenshot (API/no UI fail)' : '—'}
+														</span>
 													)}
 												</td>
 											</tr>
@@ -305,6 +455,11 @@ export default function Execution() {
 				isOpen={reportExecutionId != null}
 				executionId={reportExecutionId}
 				onClose={() => setReportExecutionId(null)}
+			/>
+			<ExecutionLogsModal
+				isOpen={logsExecutionId != null}
+				executionId={logsExecutionId}
+				onClose={() => setLogsExecutionId(null)}
 			/>
 
 			{/* Screenshot preview modal — mount when open so fade-in animation runs reliably */}

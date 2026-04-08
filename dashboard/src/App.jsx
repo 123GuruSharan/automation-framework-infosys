@@ -4,6 +4,7 @@ import Dashboard from './pages/Dashboard';
 import TestCases from './pages/TestCases';
 import TestSuites from './pages/TestSuites';
 import Execution from './pages/Execution';
+import Schedules from './pages/Schedules';
 
 export default function App() {
 	return (
@@ -15,6 +16,7 @@ export default function App() {
 					<Route path="testcases" element={<TestCases />} />
 					<Route path="testsuites" element={<TestSuites />} />
 					<Route path="execution" element={<Execution />} />
+					<Route path="schedules" element={<Schedules />} />
 				</Route>
 				<Route path="*" element={<Navigate to="/dashboard" replace />} />
 			</Routes>

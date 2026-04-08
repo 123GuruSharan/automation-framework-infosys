@@ -13,8 +13,9 @@ public class SeleniumTestRunner {
 
 	private static final Logger log = LoggerFactory.getLogger(SeleniumTestRunner.class);
 
-	private static final String SAMPLE_URL = "https://example.com";
-	private static final String EXPECTED_TITLE = "Example Domain";
+	/** Used when a suite case has no URL/title in DB (backward compatible). */
+	private static final String DEFAULT_URL = "https://example.com";
+	private static final String DEFAULT_EXPECTED_TITLE = "Example Domain";
 
 	public record UiTestResult(boolean pass, String failureScreenshotPath) {
 	}
@@ -25,7 +26,15 @@ public class SeleniumTestRunner {
 		this.screenshotUtil = screenshotUtil;
 	}
 
-	public UiTestResult runSampleUiTest(String testName) {
+	/**
+	 * Runs a UI check using DB fields when present; otherwise example.com / Example Domain.
+	 * Pass/fail comes only from comparing expected vs actual title; screenshots are taken only on failure.
+	 */
+	public UiTestResult runUiTest(Long testCaseId, String testName, String url, String expectedTitle) {
+		String targetUrl = (url != null && !url.isBlank()) ? url.trim() : DEFAULT_URL;
+		String expected = (expectedTitle != null && !expectedTitle.isBlank()) ? expectedTitle.trim()
+				: DEFAULT_EXPECTED_TITLE;
+
 		WebDriverManager.chromedriver().setup();
 		ChromeOptions options = new ChromeOptions();
 		options.addArguments("--headless=new");
@@ -35,22 +44,21 @@ public class SeleniumTestRunner {
 
 		try {
 			driver = new ChromeDriver(options);
-			log.debug("Navigating to {}", SAMPLE_URL);
+			log.debug("Navigating to {}", targetUrl);
 
-			driver.get(SAMPLE_URL);
+			driver.get(targetUrl);
 
-			// ✅ NORMAL VALIDATION
 			String title = driver.getTitle();
-			boolean pass = EXPECTED_TITLE.equals(title);
+			boolean pass = expected.equals(title != null ? title.trim() : "");
 
-			log.info("Test: {}, Title='{}', Expected='{}', Pass={}",
-					testName, title, EXPECTED_TITLE, pass);
+			log.info("Test: {}, Title='{}', Expected='{}', Pass={}", testName, title, expected, pass);
 
 			String screenshotPath = null;
 
-			// 📸 Capture screenshot ONLY if failed
 			if (!pass) {
-				screenshotPath = screenshotUtil.captureFailureScreenshot(driver, testName);
+				screenshotPath = testCaseId != null
+						? screenshotUtil.captureFailureScreenshot(driver, testCaseId)
+						: screenshotUtil.captureFailureScreenshot(driver, testName);
 			}
 
 			return new UiTestResult(pass, screenshotPath);
@@ -61,7 +69,9 @@ public class SeleniumTestRunner {
 			String screenshotPath = null;
 
 			if (driver != null) {
-				screenshotPath = screenshotUtil.captureFailureScreenshot(driver, testName);
+				screenshotPath = testCaseId != null
+						? screenshotUtil.captureFailureScreenshot(driver, testCaseId)
+						: screenshotUtil.captureFailureScreenshot(driver, testName);
 			}
 
 			return new UiTestResult(false, screenshotPath);

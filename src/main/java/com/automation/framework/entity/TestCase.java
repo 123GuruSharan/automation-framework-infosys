@@ -45,6 +45,14 @@ public class TestCase {
 	@Column(nullable = false, length = 20)
 	private String status;
 
+	/** Target page for UI tests (e.g. https://example.com). Optional for non-UI tests. */
+	@Column(length = 2000)
+	private String url;
+
+	/** Expected document title for UI tests. Optional for non-UI tests. */
+	@Column(length = 500)
+	private String expectedTitle;
+
 	@Column(nullable = false)
 	private LocalDateTime createdAt;
 

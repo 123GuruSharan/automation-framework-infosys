@@ -7,6 +7,8 @@ const emptyForm = {
 	type: 'UI',
 	status: 'PENDING',
 	testSuiteId: '',
+	url: '',
+	expectedTitle: '',
 };
 
 export default function TestCases() {
@@ -14,9 +16,11 @@ export default function TestCases() {
 	const [suites, setSuites] = useState([]);
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
+	const [updating, setUpdating] = useState(false);
 	const [error, setError] = useState(null);
 	const [success, setSuccess] = useState(null);
 	const [form, setForm] = useState(emptyForm);
+	const [editing, setEditing] = useState(null);
 
 	const load = async () => {
 		setError(null);
@@ -53,6 +57,8 @@ export default function TestCases() {
 				type: form.type,
 				status: form.status,
 				testSuiteId: suiteId,
+				url: form.url || null,
+				expectedTitle: form.expectedTitle || null,
 			});
 			setSuccess('Test case created');
 			setForm(emptyForm);
@@ -66,6 +72,61 @@ export default function TestCases() {
 			setError(msg);
 		} finally {
 			setSaving(false);
+		}
+	};
+
+	const openEdit = (row) => {
+		setError(null);
+		setSuccess(null);
+		setEditing({
+			id: row.id,
+			name: row.name || '',
+			description: row.description || '',
+			type: row.type || 'UI',
+			status: row.status || 'PENDING',
+			testSuiteId: String(row.testSuite?.id || row.testSuiteId || ''),
+			url: row.url || '',
+			expectedTitle: row.expectedTitle || '',
+		});
+	};
+
+	const closeEdit = () => {
+		setEditing(null);
+	};
+
+	const onEditSubmit = async (e) => {
+		e.preventDefault();
+		if (!editing?.id) return;
+		const suiteId = Number(editing.testSuiteId);
+		if (!suiteId) {
+			setError('Select a test suite for edit');
+			return;
+		}
+		setUpdating(true);
+		setError(null);
+		setSuccess(null);
+		try {
+			await testCasesApi.update(editing.id, {
+				name: editing.name,
+				description: editing.description || null,
+				type: editing.type,
+				status: editing.status,
+				testSuiteId: suiteId,
+				url: editing.url || null,
+				expectedTitle: editing.expectedTitle || null,
+			});
+			setSuccess(`Test case #${editing.id} updated`);
+			closeEdit();
+			await load();
+		} catch (e2) {
+			const msg =
+				e2?.response?.data?.message ||
+				(typeof e2?.response?.data === 'string' ? e2.response.data : null) ||
+				e2?.message ||
+				'Update failed';
+			setError(msg);
+		} finally {
+			setUpdating(false);
 		}
 	};
 
@@ -165,6 +226,28 @@ export default function TestCases() {
 							))}
 						</select>
 					</label>
+					<label className="block sm:col-span-2">
+						<span className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+							URL (UI tests)
+						</span>
+						<input
+							value={form.url}
+							onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
+							placeholder="https://example.com"
+							className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/15 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-indigo-400"
+						/>
+					</label>
+					<label className="block sm:col-span-2">
+						<span className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+							Expected title (UI tests)
+						</span>
+						<input
+							value={form.expectedTitle}
+							onChange={(e) => setForm((f) => ({ ...f, expectedTitle: e.target.value }))}
+							placeholder="Example Domain"
+							className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/15 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-indigo-400"
+						/>
+					</label>
 				</div>
 				<div className="mt-6">
 					<button
@@ -190,12 +273,15 @@ export default function TestCases() {
 								<th className="px-6 py-3">Type</th>
 								<th className="px-6 py-3">Status</th>
 								<th className="px-6 py-3">Suite</th>
+								<th className="px-6 py-3">URL</th>
+								<th className="px-6 py-3">Expected title</th>
+								<th className="px-6 py-3">Actions</th>
 							</tr>
 						</thead>
 						<tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
 							{rows.length === 0 ? (
 								<tr>
-									<td colSpan={5} className="px-6 py-10 text-center text-zinc-500">
+									<td colSpan={8} className="px-6 py-10 text-center text-zinc-500">
 										No test cases yet. Create a suite first, then add cases.
 									</td>
 								</tr>
@@ -225,6 +311,21 @@ export default function TestCases() {
 										<td className="px-6 py-3 text-zinc-600 dark:text-zinc-300">
 											{r.testSuite?.name || r.testSuiteName || r.testSuite?.id || r.testSuiteId || '—'}
 										</td>
+										<td className="max-w-[220px] truncate px-6 py-3 text-zinc-600 dark:text-zinc-300">
+											{r.url || '—'}
+										</td>
+										<td className="max-w-[220px] truncate px-6 py-3 text-zinc-600 dark:text-zinc-300">
+											{r.expectedTitle || '—'}
+										</td>
+										<td className="px-6 py-3">
+											<button
+												type="button"
+												onClick={() => openEdit(r)}
+												className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-800 hover:bg-indigo-100 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200 dark:hover:bg-indigo-500/20"
+											>
+												Edit
+											</button>
+										</td>
 									</tr>
 								))
 							)}
@@ -232,6 +333,123 @@ export default function TestCases() {
 					</table>
 				</div>
 			</div>
+
+			{editing && (
+				<div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4">
+					<form
+						onSubmit={onEditSubmit}
+						className="w-full max-w-2xl rounded-2xl border border-zinc-200 bg-white p-6 shadow-xl dark:border-zinc-800 dark:bg-zinc-900"
+					>
+						<h3 className="text-lg font-semibold text-zinc-900 dark:text-white">Edit test case #{editing.id}</h3>
+						<p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">PATCH /api/testcases/{'{id}'}</p>
+						<div className="mt-6 grid gap-4 sm:grid-cols-2">
+							<label className="block sm:col-span-2">
+								<span className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+									Name
+								</span>
+								<input
+									required
+									value={editing.name}
+									onChange={(e) => setEditing((f) => ({ ...f, name: e.target.value }))}
+									className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+								/>
+							</label>
+							<label className="block sm:col-span-2">
+								<span className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+									Description
+								</span>
+								<textarea
+									rows={2}
+									value={editing.description}
+									onChange={(e) => setEditing((f) => ({ ...f, description: e.target.value }))}
+									className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+								/>
+							</label>
+							<label className="block">
+								<span className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+									Type
+								</span>
+								<select
+									value={editing.type}
+									onChange={(e) => setEditing((f) => ({ ...f, type: e.target.value }))}
+									className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+								>
+									<option value="UI">UI</option>
+									<option value="API">API</option>
+								</select>
+							</label>
+							<label className="block">
+								<span className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+									Status
+								</span>
+								<select
+									value={editing.status}
+									onChange={(e) => setEditing((f) => ({ ...f, status: e.target.value }))}
+									className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+								>
+									<option value="PENDING">PENDING</option>
+									<option value="PASS">PASS</option>
+									<option value="FAIL">FAIL</option>
+								</select>
+							</label>
+							<label className="block sm:col-span-2">
+								<span className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+									Test suite
+								</span>
+								<select
+									required
+									value={editing.testSuiteId}
+									onChange={(e) => setEditing((f) => ({ ...f, testSuiteId: e.target.value }))}
+									className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+								>
+									<option value="">Select suite…</option>
+									{suites.map((s) => (
+										<option key={s.id} value={s.id}>
+											{s.name} (#{s.id})
+										</option>
+									))}
+								</select>
+							</label>
+							<label className="block sm:col-span-2">
+								<span className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+									URL (UI tests)
+								</span>
+								<input
+									value={editing.url}
+									onChange={(e) => setEditing((f) => ({ ...f, url: e.target.value }))}
+									className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+								/>
+							</label>
+							<label className="block sm:col-span-2">
+								<span className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+									Expected title (UI tests)
+								</span>
+								<input
+									value={editing.expectedTitle}
+									onChange={(e) => setEditing((f) => ({ ...f, expectedTitle: e.target.value }))}
+									className="mt-1 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
+								/>
+							</label>
+						</div>
+						<div className="mt-6 flex justify-end gap-3">
+							<button
+								type="button"
+								onClick={closeEdit}
+								className="rounded-xl border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+							>
+								Cancel
+							</button>
+							<button
+								type="submit"
+								disabled={updating}
+								className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
+							>
+								{updating ? 'Saving…' : 'Save changes'}
+							</button>
+						</div>
+					</form>
+				</div>
+			)}
 		</div>
 	);
 }

@@ -8,6 +8,7 @@ const titles = {
 	'/testcases': 'Test Cases',
 	'/testsuites': 'Test Suites',
 	'/execution': 'Execution',
+	'/schedules': 'Schedules',
 };
 
 export default function MainLayout() {

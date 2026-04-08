@@ -39,15 +39,20 @@ public class TestExecutionService {
 	private final TestSuiteRepository testSuiteRepository;
 	private final TestCaseExecutionResultRepository testCaseExecutionResultRepository;
 	private final TestExecutionEngine testExecutionEngine;
+	private final TestExecutionLogService testExecutionLogService;
+	private final ExecutionNotificationService executionNotificationService;
 	private final TransactionTemplate transactionTemplate;
 
 	public TestExecutionService(TestExecutionRepository testExecutionRepository,
 			TestSuiteRepository testSuiteRepository, TestCaseExecutionResultRepository testCaseExecutionResultRepository,
-			TestExecutionEngine testExecutionEngine, PlatformTransactionManager transactionManager) {
+			TestExecutionEngine testExecutionEngine, TestExecutionLogService testExecutionLogService,
+			ExecutionNotificationService executionNotificationService, PlatformTransactionManager transactionManager) {
 		this.testExecutionRepository = testExecutionRepository;
 		this.testSuiteRepository = testSuiteRepository;
 		this.testCaseExecutionResultRepository = testCaseExecutionResultRepository;
 		this.testExecutionEngine = testExecutionEngine;
+		this.testExecutionLogService = testExecutionLogService;
+		this.executionNotificationService = executionNotificationService;
 		this.transactionTemplate = new TransactionTemplate(transactionManager);
 	}
 
@@ -85,11 +90,17 @@ public class TestExecutionService {
 		initial.setDurationMs(null);
 
 		Long executionId = transactionTemplate.execute(status -> testExecutionRepository.save(initial).getId());
+		String trigger = clientStatus != null && !clientStatus.isBlank() ? clientStatus : "API";
+		testExecutionLogService.addLog(executionId, "INFO",
+				"Execution started for suiteId=" + testSuiteId + " (trigger=" + trigger + ")", "ExecutionEngine");
 
 		try {
 			SuiteRunResult result = testExecutionEngine.runTestSuite(testSuiteId);
 			log.info("Execution engine finished: suiteId={}, total={}, passed={}, failed={}, suiteDurationMs={}",
 					testSuiteId, result.total(), result.passed(), result.failed(), result.suiteDurationMs());
+			testExecutionLogService.addLog(executionId, "INFO",
+					"Engine finished total=" + result.total() + ", passed=" + result.passed() + ", failed=" + result.failed(),
+					"ExecutionEngine");
 
 			return transactionTemplate.execute(status -> {
 				TestExecution ex = testExecutionRepository.findById(executionId)
@@ -111,19 +122,30 @@ public class TestExecutionService {
 					row.setDurationMs(d.durationMs());
 					row.setScreenshotPath(d.screenshotPath());
 					testCaseExecutionResultRepository.save(row);
+					if (!"PASS".equalsIgnoreCase(d.status())) {
+						testExecutionLogService.addLog(executionId, "WARN",
+								"Test case failed: id=" + d.testCaseId() + ", name=" + d.testCaseName(), "ExecutionEngine");
+					}
 				}
 				log.info("Execution persisted: id={}, status={}, total={}, passed={}, failed={}, durationMs={}",
 						ex.getId(), ex.getStatus(), ex.getTotalTests(), ex.getPassedTests(), ex.getFailedTests(),
 						ex.getDurationMs());
+				testExecutionLogService.addLog(executionId, "INFO",
+						"Execution completed with status=" + ex.getStatus(), "ExecutionEngine");
+				executionNotificationService.notifyIfExecutionProblem(ex);
 				return ex;
 			});
 		} catch (Exception e) {
 			log.error("Execution engine failed: suiteId={}, executionId={}", testSuiteId, executionId, e);
+			testExecutionLogService.addLog(executionId, "ERROR",
+					"Execution failed: " + e.getMessage(), "ExecutionEngine");
 			return transactionTemplate.execute(status -> {
 				TestExecution ex = testExecutionRepository.findById(executionId)
 						.orElseThrow(() -> new IllegalStateException("TestExecution missing: " + executionId));
 				ex.setStatus("ERROR");
-				return testExecutionRepository.save(ex);
+				TestExecution saved = testExecutionRepository.save(ex);
+				executionNotificationService.notifyIfExecutionProblem(saved);
+				return saved;
 			});
 		}
 	}

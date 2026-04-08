@@ -65,9 +65,7 @@ public class TestExecutionEngine {
 			List<Future<TestCaseOutcome>> futures = new ArrayList<>(cases.size());
 			for (TestCase testCase : cases) {
 				final Long caseId = testCase.getId();
-				final String caseName = testCase.getName();
-				final String rawType = testCase.getType();
-				futures.add(executor.submit(() -> executeSingleTestCase(caseId, caseName, rawType)));
+				futures.add(executor.submit(() -> executeSingleTestCase(caseId)));
 			}
 
 			int passed = 0;
@@ -107,7 +105,13 @@ public class TestExecutionEngine {
 		}
 	}
 
-	private TestCaseOutcome executeSingleTestCase(Long id, String name, String rawType) {
+	private TestCaseOutcome executeSingleTestCase(Long testCaseId) {
+		TestCase tc = testCaseService.getById(testCaseId)
+				.orElseThrow(() -> new IllegalStateException("TestCase not found: " + testCaseId));
+		Long id = tc.getId();
+		String name = tc.getName();
+		String rawType = tc.getType();
+
 		String threadName = Thread.currentThread().getName();
 		String type = rawType != null ? rawType.trim().toUpperCase() : "";
 
@@ -119,7 +123,8 @@ public class TestExecutionEngine {
 		try {
 			ok = switch (type) {
 				case "UI" -> {
-					SeleniumTestRunner.UiTestResult ui = seleniumTestRunner.runSampleUiTest(name);
+					SeleniumTestRunner.UiTestResult ui = seleniumTestRunner.runUiTest(id, name, tc.getUrl(),
+							tc.getExpectedTitle());
 					screenshotPath = ui.failureScreenshotPath();
 					yield ui.pass();
 				}

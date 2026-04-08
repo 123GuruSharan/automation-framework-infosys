@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { testSuitesApi } from '../services/api';
+import { resultsApi, testSuitesApi } from '../services/api';
 
 export default function TestSuites() {
 	const [suites, setSuites] = useState([]);
@@ -9,6 +9,8 @@ export default function TestSuites() {
 	const [success, setSuccess] = useState(null);
 	const [name, setName] = useState('');
 	const [description, setDescription] = useState('');
+	const [resultsBySuiteId, setResultsBySuiteId] = useState({});
+	const [resultsLoadingId, setResultsLoadingId] = useState(null);
 
 	const load = async () => {
 		setError(null);
@@ -25,6 +27,19 @@ export default function TestSuites() {
 	useEffect(() => {
 		load();
 	}, []);
+
+	const loadSuiteResults = async (suiteId) => {
+		setResultsLoadingId(suiteId);
+		setError(null);
+		try {
+			const { data } = await resultsApi.getBySuite(suiteId, { limit: 15 });
+			setResultsBySuiteId((prev) => ({ ...prev, [suiteId]: data }));
+		} catch (e) {
+			setError(e?.response?.data?.message || e?.message || 'Failed to load suite results');
+		} finally {
+			setResultsLoadingId(null);
+		}
+	};
 
 	const onSubmit = async (e) => {
 		e.preventDefault();
@@ -50,7 +65,10 @@ export default function TestSuites() {
 		<div className="space-y-8">
 			<div>
 				<h2 className="text-2xl font-semibold text-zinc-900 dark:text-white">Test suites</h2>
-				<p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Organize cases into runnable suites.</p>
+				<p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+					Organize cases into runnable suites. Point-to-point integration:{' '}
+					<code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">GET /api/results/&#123;suiteId&#125;</code>
+				</p>
 			</div>
 
 			{error && (
@@ -123,6 +141,38 @@ export default function TestSuites() {
 								<p className="mt-4 text-xs text-zinc-400">
 									Created {new Date(s.createdAt).toLocaleString()}
 								</p>
+							)}
+							<button
+								type="button"
+								onClick={() => loadSuiteResults(s.id)}
+								disabled={resultsLoadingId === s.id}
+								className="mt-4 w-full rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-800 hover:bg-violet-100 disabled:opacity-60 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200 dark:hover:bg-violet-500/20"
+							>
+								{resultsLoadingId === s.id ? 'Loading results…' : 'Load suite results (API)'}
+							</button>
+							{resultsBySuiteId[s.id] && (
+								<div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-700 dark:bg-zinc-800/50">
+									<p className="font-semibold text-zinc-800 dark:text-zinc-100">
+										{resultsBySuiteId[s.id].totalExecutions} run(s) · pass rate{' '}
+										{resultsBySuiteId[s.id].overallPassRate}%
+									</p>
+									{resultsBySuiteId[s.id].lastExecutionAt && (
+										<p className="mt-1 text-zinc-500 dark:text-zinc-400">
+											Last: {new Date(resultsBySuiteId[s.id].lastExecutionAt).toLocaleString()}
+										</p>
+									)}
+									<ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-zinc-600 dark:text-zinc-300">
+										{(resultsBySuiteId[s.id].recentExecutions || []).map((r) => (
+											<li key={r.id} className="flex justify-between gap-2">
+												<span className="truncate">#{r.id}</span>
+												<span className="shrink-0 text-zinc-500">{r.status}</span>
+												<span className="shrink-0">
+													{r.passedTests}/{r.totalTests}
+												</span>
+											</li>
+										))}
+									</ul>
+								</div>
 							)}
 						</div>
 					))

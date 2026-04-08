@@ -31,3 +31,7 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Dashboard local env overrides (machine-specific / secrets)
+dashboard/.env.local
+dashboard/.env.*.local
