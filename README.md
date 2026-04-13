@@ -159,31 +159,25 @@ http://localhost:5173
 ---
 ## Screenshots
 
-#Dashboard Image
+**Dashboard Image**
 <img width="1901" height="1012" alt="image" src="https://github.com/user-attachments/assets/d78d8fb8-c6b8-45c4-a2ca-7c994484bfd7" />
 <img width="1919" height="1079" alt="image" src="https://github.com/user-attachments/assets/5b3b231b-a637-4938-8018-58fad9aab945" />
 
-#TestCases Window
+**TestCases Window**
 <img width="1898" height="1079" alt="image" src="https://github.com/user-attachments/assets/c8782526-6d2f-4107-b155-e0ffa0fc4533" />
 <img width="1857" height="929" alt="image" src="https://github.com/user-attachments/assets/bb17292e-ab5e-4731-b6f6-91c160345aa7" />
 
-#Test Suites Window
+**Test Suites Window**
 <img width="1895" height="1078" alt="image" src="https://github.com/user-attachments/assets/c02011e3-f7b5-4a1d-af75-7d3c6abe8747" />
 
-#Execution Window
+**Execution Window**
 <img width="1879" height="1079" alt="image" src="https://github.com/user-attachments/assets/ec1c2332-cecd-46ed-96e4-5af8fe3ee0c3" />
 
-#TestCase Failure Captured
+**TestCase Failure Captured**
 <img width="1828" height="862" alt="image" src="https://github.com/user-attachments/assets/3b0b97a6-766f-4e83-bf74-b2c5a93eb144" />
 
-#TestCase Scheduling Window
+**TestCase Scheduling Window**
 <img width="1873" height="1079" alt="image" src="https://github.com/user-attachments/assets/150ee36a-4c5a-4bd7-b854-f2d31b211cc5" />
-
-
-
-
-
-
 
 
 
